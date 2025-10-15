@@ -2,12 +2,11 @@ import { PipeTransform, BadRequestException } from '@nestjs/common';
 import { z } from 'zod';
 
 // research how to avoid duplication of types
-export const MinValidEventSchema = z.object({
+export const MinValidEventSchema = z.looseObject({
   eventId: z.string(),
   source: z.enum(['facebook', 'tiktok']),
   funnelStage: z.enum(['top', 'bottom']),
   eventType: z.string().min(1),
-  data: z.object({}),
 });
 
 export const EventsBatchSchema = z.array(MinValidEventSchema);

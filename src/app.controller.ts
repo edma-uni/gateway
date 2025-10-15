@@ -55,15 +55,13 @@ export class AppController {
         1,
       );
 
-      this.logger.log(
-        `Publishing event ${event.eventId} to subject: ${subject}`,
-      );
+      this.logger.log(`Publishing ${event.eventId} to subject: ${subject}`);
 
       const publishPromise = this.jetStreamService
         .publish(subject, event)
         .then(() => {
           successCount++;
-          // Track successful publish (processed)
+
           this.metricsService.incrementEventsPublished(
             event.source,
             event.eventType,
@@ -72,7 +70,7 @@ export class AppController {
         })
         .catch((err) => {
           this.logger.error(`Failed to publish event ${event.eventId}:`, err);
-          // Track publish error (failed)
+
           this.metricsService.incrementPublishErrors(
             event.source,
             event.eventType,
