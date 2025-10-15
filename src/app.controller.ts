@@ -30,7 +30,6 @@ export class AppController {
 
   @Get('health')
   health() {
-    // Liveness probe - checks if the application is alive
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -39,7 +38,6 @@ export class AppController {
 
   @Get('ready')
   ready() {
-    // Readiness probe - checks if the application is ready to accept traffic
     if (!this.jetStreamService.isConnected()) {
       throw new HttpException(
         {
@@ -74,7 +72,6 @@ export class AppController {
     const promises: Promise<void>[] = [];
 
     for (const event of events) {
-      // Add correlation ID to event for tracing across services
       const enrichedEvent: Event = {
         ...event,
         correlationId,
@@ -83,7 +80,6 @@ export class AppController {
 
       const subject = `raw.events.${event.source}.${event.funnelStage}.${event.eventType}`;
 
-      // Track event received (accepted)
       this.metricsService.incrementEventsReceived(
         event.source,
         event.eventType,

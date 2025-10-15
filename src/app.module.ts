@@ -38,7 +38,6 @@ import { CorrelationIdMiddleware } from './middleware/correlation-id.middleware'
         }),
         autoLogging: {
           ignore: (req) => {
-            // Don't log health checks and metrics
             return (
               req.url === '/health' ||
               req.url === '/ready' ||
