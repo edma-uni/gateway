@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  OnModuleInit,
-  OnModuleDestroy,
-} from '@nestjs/common';
+import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import {
   connect,
@@ -52,10 +48,8 @@ export class JetStreamService implements OnModuleInit, OnModuleDestroy {
 
       this.logger.info(`Connected to NATS server ${this.nc.getServer()}`);
 
-      // Update connection metric
       this.metricsService.setNatsConnectionStatus(true);
 
-      // Monitor connection status
       void (async () => {
         for await (const status of this.nc.status()) {
           const statusType = status.type.toString();
@@ -64,7 +58,6 @@ export class JetStreamService implements OnModuleInit, OnModuleDestroy {
             `NATS connection status changed`,
           );
 
-          // Update metrics based on connection status
           if (statusType === 'disconnect' || statusType === 'error') {
             this.metricsService.setNatsConnectionStatus(false);
           } else if (statusType === 'reconnect') {
@@ -130,7 +123,6 @@ export class JetStreamService implements OnModuleInit, OnModuleDestroy {
         },
       );
 
-      // Record publish duration
       const duration = (Date.now() - startTime) / 1000;
       this.metricsService.recordNatsPublishDuration(subject, duration);
 
@@ -140,7 +132,6 @@ export class JetStreamService implements OnModuleInit, OnModuleDestroy {
 
       return ack;
     } catch (error) {
-      // Record publish duration even on error
       const duration = (Date.now() - startTime) / 1000;
       this.metricsService.recordNatsPublishDuration(subject, duration);
 

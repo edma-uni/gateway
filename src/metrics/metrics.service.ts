@@ -26,7 +26,6 @@ export class MetricsService {
     private readonly natsPublishDurationHistogram: Histogram<string>,
   ) {}
 
-  // Event Metrics
   incrementEventsReceived(
     source: string,
     eventType: string,
@@ -70,7 +69,6 @@ export class MetricsService {
   }
 }
 
-// Metric providers
 export const metricsProviders = [
   makeCounterProvider({
     name: 'events_received_total',
@@ -95,6 +93,6 @@ export const metricsProviders = [
     name: 'nats_publish_duration_seconds',
     help: 'Duration of NATS publish operations in seconds',
     labelNames: ['subject'],
-    buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5], // 1ms to 5s
+    buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5],
   }),
 ];
