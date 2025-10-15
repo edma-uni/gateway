@@ -1,13 +1,53 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { NatsModule } from './nats/nats.module';
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import { MetricsModule } from './metrics/metrics.module';
+import { LoggerModule } from 'nestjs-pino';
+import { CorrelationIdMiddleware } from './middleware/correlation-id.middleware';
 
 @Module({
   imports: [
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+        transport:
+          process.env.NODE_ENV !== 'production'
+            ? {
+                target: 'pino-pretty',
+                options: {
+                  colorize: true,
+                  translateTime: 'SYS:standard',
+                  ignore: 'pid,hostname',
+                },
+              }
+            : undefined,
+        serializers: {
+          req: (req: any) => ({
+            method: req.method as string,
+            url: req.url as string,
+            correlationId: req.correlationId as string | undefined,
+          }),
+          res: (res: any) => ({
+            statusCode: res.statusCode as number,
+          }),
+        },
+        customProps: (req: any) => ({
+          correlationId: req.correlationId as string | undefined,
+        }),
+        autoLogging: {
+          ignore: (req) => {
+            // Don't log health checks and metrics
+            return (
+              req.url === '/health' ||
+              req.url === '/ready' ||
+              req.url === '/metrics'
+            );
+          },
+        },
+      },
+    }),
     PrometheusModule.register({
       defaultMetrics: {
         enabled: true,
@@ -37,6 +77,10 @@ import { MetricsModule } from './metrics/metrics.module';
     NatsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+  }
+}
