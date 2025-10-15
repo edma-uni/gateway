@@ -8,6 +8,7 @@ RUN npm ci
 FROM base AS builder
 COPY --from=dependencies /usr/src/app/node_modules ./node_modules
 COPY . .
+RUN npm test
 RUN npm run build
 
 FROM base AS production

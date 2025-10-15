@@ -2,8 +2,8 @@ import {
   Injectable,
   OnModuleInit,
   OnModuleDestroy,
-  Logger,
 } from '@nestjs/common';
+import { PinoLogger } from 'nestjs-pino';
 import {
   connect,
   NatsConnection,
@@ -19,13 +19,16 @@ import { MetricsService } from '../metrics/metrics.service';
 
 @Injectable()
 export class JetStreamService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(JetStreamService.name);
   private nc: NatsConnection;
   private js: JetStreamClient;
   private jsm: JetStreamManager;
   private readonly jsonCodec = JSONCodec();
-
-  constructor(private readonly metricsService: MetricsService) {}
+  constructor(
+    private readonly logger: PinoLogger,
+    private readonly metricsService: MetricsService,
+  ) {
+    logger.setContext(JetStreamService.name);
+  }
 
   async onModuleInit() {
     await this.connect();
@@ -47,20 +50,21 @@ export class JetStreamService implements OnModuleInit, OnModuleDestroy {
       this.js = this.nc.jetstream();
       this.jsm = await this.nc.jetstreamManager();
 
-      this.logger.log(`Connected to NATS server ${this.nc.getServer()}`);
+      this.logger.info(`Connected to NATS server ${this.nc.getServer()}`);
 
       // Update connection metric
       this.metricsService.setNatsConnectionStatus(true);
 
       // Monitor connection status
-      (async () => {
+      void (async () => {
         for await (const status of this.nc.status()) {
-          this.logger.log(
-            `NATS connection status: ${status.type} - ${status.data}`,
+          const statusType = status.type.toString();
+          this.logger.info(
+            { statusType, server: this.nc.getServer() },
+            `NATS connection status changed`,
           );
 
           // Update metrics based on connection status
-          const statusType = status.type.toString();
           if (statusType === 'disconnect' || statusType === 'error') {
             this.metricsService.setNatsConnectionStatus(false);
           } else if (statusType === 'reconnect') {
@@ -69,7 +73,10 @@ export class JetStreamService implements OnModuleInit, OnModuleDestroy {
         }
       })();
     } catch (error) {
-      this.logger.error('Error connecting to NATS server', error);
+      this.logger.error(
+        { error: error instanceof Error ? error.message : String(error) },
+        'Error connecting to NATS server',
+      );
       this.metricsService.setNatsConnectionStatus(false);
       throw error;
     }
@@ -94,11 +101,11 @@ export class JetStreamService implements OnModuleInit, OnModuleDestroy {
     for (const streamConfig of streams) {
       try {
         await this.jsm.streams.info(streamConfig.name!);
-        this.logger.log(`Stream ${streamConfig.name} already exists`);
-      } catch (error) {
+        this.logger.info(`Stream ${streamConfig.name} already exists`);
+      } catch (error: any) {
         if (error.code === '404') {
           await this.jsm.streams.add(streamConfig);
-          this.logger.log(`Stream ${streamConfig.name} created`);
+          this.logger.info(`Stream ${streamConfig.name} created`);
         } else {
           throw error;
         }
@@ -144,13 +151,19 @@ export class JetStreamService implements OnModuleInit, OnModuleDestroy {
 
   private generateMessageId(payload: any): string {
     // Use event ID if available for deduplication
-    return payload.eventId || `${Date.now()}-${Math.random()}`;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const eventId: unknown = payload?.eventId;
+    return (
+      (typeof eventId === 'string' ? eventId : null) ||
+      `${Date.now()}-${Math.random()}`
+    );
   }
 
   async onModuleDestroy() {
     if (this.nc) {
+      this.logger.info('Draining NATS connection for graceful shutdown');
       await this.nc.drain();
-      this.logger.log('NATS connection drained and closed');
+      this.logger.info('NATS connection drained and closed');
     }
   }
 
