@@ -78,7 +78,7 @@ export class AppController {
         timestamp: event.timestamp || new Date().toISOString(),
       };
 
-      const subject = `raw.events.${event.source}.${event.funnelStage}.${event.eventType}`;
+      const subject = `raw.events.${event.source}`;
 
       this.metricsService.incrementEventsReceived(
         event.source,

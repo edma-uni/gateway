@@ -79,7 +79,7 @@ export class JetStreamService implements OnModuleInit, OnModuleDestroy {
     const streams: Partial<StreamConfig>[] = [
       {
         name: 'RAW_EVENTS',
-        subjects: ['raw.events.*.*.*'], // raw.events.{source}.{funnelStage}.{eventType}
+        subjects: ['raw.events.*'],
         retention: RetentionPolicy.Limits,
         max_age: 7 * 24 * 60 * 60 * 1_000_000_000, // 7 days in nanoseconds
         max_msgs: 1_000_000,
