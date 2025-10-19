@@ -3,7 +3,6 @@ import {
   Get,
   Post,
   Body,
-  UsePipes,
   Req,
   HttpException,
   HttpStatus,
@@ -11,12 +10,17 @@ import {
 import type { Request } from 'express';
 import { PinoLogger } from 'nestjs-pino';
 import { JetStreamService } from './nats/jetstream.service';
-import {
-  EventsBatchSchema,
-  ZodValidationPipe,
-} from './pipes/zod-validation.pipe';
 import { MetricsService } from './metrics/metrics.service';
-import type { Event, EventBatch } from './types/event.types';
+import z from 'zod';
+
+const MinValidEventSchema = z.looseObject({
+  source: z.enum(['facebook', 'tiktok']),
+});
+type MinValidEvent = z.infer<typeof MinValidEventSchema>;
+
+const MinValidEventsSchema = MinValidEventSchema.array();
+
+type MinValidEvents = z.infer<typeof MinValidEventsSchema>;
 
 @Controller()
 export class AppController {
@@ -56,9 +60,17 @@ export class AppController {
   }
 
   @Post('events')
-  @UsePipes(new ZodValidationPipe(EventsBatchSchema))
-  async handleEvent(@Body() events: EventBatch, @Req() req: Request) {
+  async handleEvent(@Body() events: MinValidEvents, @Req() req: Request) {
     const correlationId = req.correlationId;
+
+    const validationResult = MinValidEventsSchema.safeParse(events);
+
+    if (!validationResult.success) {
+      this.logger.warn('Invalid event batch received', {
+        correlationId,
+        error: z.treeifyError(validationResult.error),
+      });
+    }
 
     this.logger.info(
       {
@@ -72,27 +84,21 @@ export class AppController {
     const promises: Promise<void>[] = [];
 
     for (const event of events) {
-      const enrichedEvent: Event = {
+      const enrichedEvent: MinValidEvent = {
         ...event,
         correlationId,
-        timestamp: event.timestamp || new Date().toISOString(),
+        timestamp: new Date().toISOString(),
       };
 
-      const subject = `raw.events.${event.source}`;
+      const subject = `events.${event.source}`;
 
-      this.metricsService.incrementEventsReceived(
-        event.source,
-        event.eventType,
-        1,
-      );
+      this.metricsService.incrementEventsReceived(event.source, 1);
 
       this.logger.debug(
         {
           correlationId,
-          eventId: event.eventId,
           subject,
           source: event.source,
-          eventType: event.eventType,
         },
         `Publishing event`,
       );
@@ -102,17 +108,12 @@ export class AppController {
         .then(() => {
           successCount++;
 
-          this.metricsService.incrementEventsPublished(
-            event.source,
-            event.eventType,
-            event.funnelStage,
-          );
+          this.metricsService.incrementEventsPublished(event.source);
         })
         .catch((err: Error) => {
           this.logger.error(
             {
               correlationId,
-              eventId: event.eventId,
               error: err.message,
               errorName: err.name,
             },
@@ -121,7 +122,6 @@ export class AppController {
 
           this.metricsService.incrementPublishErrors(
             event.source,
-            event.eventType,
             err.name || 'UnknownError',
           );
         });

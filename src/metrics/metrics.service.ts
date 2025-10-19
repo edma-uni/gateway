@@ -26,36 +26,24 @@ export class MetricsService {
     private readonly natsPublishDurationHistogram: Histogram<string>,
   ) {}
 
-  incrementEventsReceived(
-    source: string,
-    eventType: string,
-    count: number = 1,
-  ) {
+  incrementEventsReceived(source: string, count: number = 1) {
     this.eventsReceivedTotal.inc(
       {
         source,
-        event_type: eventType,
       },
       count,
     );
   }
 
-  incrementEventsPublished(
-    source: string,
-    eventType: string,
-    funnelStage: string,
-  ) {
+  incrementEventsPublished(source: string) {
     this.eventsPublishedTotal.inc({
       source,
-      event_type: eventType,
-      funnel_stage: funnelStage,
     });
   }
 
-  incrementPublishErrors(source: string, eventType: string, error: string) {
+  incrementPublishErrors(source: string, error: string) {
     this.eventsPublishErrorsTotal.inc({
       source,
-      event_type: eventType,
       error_type: error,
     });
   }
@@ -73,17 +61,17 @@ export const metricsProviders = [
   makeCounterProvider({
     name: 'events_received_total',
     help: 'Total number of events received (accepted events)',
-    labelNames: ['source', 'event_type'],
+    labelNames: ['source'],
   }),
   makeCounterProvider({
     name: 'events_published_total',
-    help: 'Total number of events successfully published to NATS (processed events)',
-    labelNames: ['source', 'event_type', 'funnel_stage'],
+    help: 'Total number of events successfully published to NATS',
+    labelNames: ['source'],
   }),
   makeCounterProvider({
     name: 'events_publish_errors_total',
     help: 'Total number of event publish errors (failed events)',
-    labelNames: ['source', 'event_type', 'error_type'],
+    labelNames: ['source'],
   }),
   makeGaugeProvider({
     name: 'nats_connection_status',

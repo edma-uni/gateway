@@ -78,11 +78,11 @@ export class JetStreamService implements OnModuleInit, OnModuleDestroy {
   private async ensureStreams() {
     const streams: Partial<StreamConfig>[] = [
       {
-        name: 'RAW_EVENTS',
-        subjects: ['raw.events.*'],
+        name: 'EVENTS',
+        subjects: ['events.*'],
         retention: RetentionPolicy.Limits,
         max_age: 7 * 24 * 60 * 60 * 1_000_000_000, // 7 days in nanoseconds
-        max_msgs: 1_000_000,
+        max_msgs: 10_000_000,
         max_bytes: 1024 * 1024 * 1024, // 1GB
         discard: DiscardPolicy.Old,
         storage: StorageType.File, // Persistent storage
@@ -141,8 +141,6 @@ export class JetStreamService implements OnModuleInit, OnModuleDestroy {
   }
 
   private generateMessageId(payload: any): string {
-    // Use event ID if available for deduplication
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const eventId: unknown = payload?.eventId;
     return (
       (typeof eventId === 'string' ? eventId : null) ||

@@ -5,7 +5,6 @@ import { AppController } from './app.controller';
 import { JetStreamService } from './nats/jetstream.service';
 import { MetricsService } from './metrics/metrics.service';
 import type { Request } from 'express';
-import type { EventBatch } from './types/event.types';
 
 describe('AppController', () => {
   let appController: AppController;
@@ -19,6 +18,7 @@ describe('AppController', () => {
       info: jest.fn(),
       error: jest.fn(),
       debug: jest.fn(),
+      warn: jest.fn(),
     };
 
     mockJetStreamService = {
@@ -87,18 +87,21 @@ describe('AppController', () => {
 
   describe('handleEvent', () => {
     it('should process events successfully', async () => {
-      (mockJetStreamService.publish as jest.Mock).mockResolvedValue({});
+      (mockJetStreamService.publish as jest.Mock).mockResolvedValue({
+        seq: 1,
+        duplicate: false,
+      });
 
-      const events: EventBatch = [
+      const events = [
         {
           eventId: '123',
-          source: 'facebook',
+          source: 'facebook' as const,
           funnelStage: 'top',
           eventType: 'click',
         },
         {
           eventId: '456',
-          source: 'tiktok',
+          source: 'tiktok' as const,
           funnelStage: 'bottom',
           eventType: 'view',
         },
@@ -114,30 +117,41 @@ describe('AppController', () => {
       expect(result.failed).toBe(0);
       expect(result.correlationId).toBe('test-correlation-id');
 
-      expect(mockMetricsService.incrementEventsReceived).toHaveBeenCalledTimes(
-        2,
+      expect(mockMetricsService.incrementEventsReceived).toHaveBeenCalledWith(
+        'facebook',
+        1,
       );
-      expect(mockMetricsService.incrementEventsPublished).toHaveBeenCalledTimes(
-        2,
+      expect(mockMetricsService.incrementEventsReceived).toHaveBeenCalledWith(
+        'tiktok',
+        1,
+      );
+      expect(mockMetricsService.incrementEventsPublished).toHaveBeenCalledWith(
+        'facebook',
+      );
+      expect(mockMetricsService.incrementEventsPublished).toHaveBeenCalledWith(
+        'tiktok',
       );
       expect(mockLogger.info).toHaveBeenCalled();
     });
 
     it('should handle publish errors gracefully', async () => {
-      (mockJetStreamService.publish as jest.Mock)
-        .mockResolvedValueOnce({})
-        .mockRejectedValueOnce(new Error('NATS publish failed'));
+      const publishError = new Error('NATS publish failed');
+      publishError.name = 'NatsError';
 
-      const events: EventBatch = [
+      (mockJetStreamService.publish as jest.Mock)
+        .mockResolvedValueOnce({ seq: 1, duplicate: false })
+        .mockRejectedValueOnce(publishError);
+
+      const events = [
         {
           eventId: '123',
-          source: 'facebook',
+          source: 'facebook' as const,
           funnelStage: 'top',
           eventType: 'click',
         },
         {
           eventId: '456',
-          source: 'tiktok',
+          source: 'tiktok' as const,
           funnelStage: 'bottom',
           eventType: 'view',
         },
@@ -152,25 +166,26 @@ describe('AppController', () => {
       expect(result.processed).toBe(1);
       expect(result.failed).toBe(1);
 
-      expect(mockMetricsService.incrementPublishErrors).toHaveBeenCalledTimes(
-        1,
+      expect(mockMetricsService.incrementPublishErrors).toHaveBeenCalledWith(
+        'tiktok',
+        'NatsError',
       );
       expect(mockLogger.error).toHaveBeenCalled();
     });
 
     it('should add correlation ID and timestamp to events', async () => {
-      let publishedEvent: any;
+      let publishedEvent: Record<string, unknown> | undefined;
       (mockJetStreamService.publish as jest.Mock).mockImplementation(
-        (subject: string, event: any) => {
+        (subject: string, event: Record<string, unknown>) => {
           publishedEvent = event;
-          return Promise.resolve({});
+          return Promise.resolve({ seq: 1, duplicate: false });
         },
       );
 
-      const events: EventBatch = [
+      const events = [
         {
           eventId: '123',
-          source: 'facebook',
+          source: 'facebook' as const,
           funnelStage: 'top',
           eventType: 'click',
         },
@@ -180,8 +195,55 @@ describe('AppController', () => {
 
       await appController.handleEvent(events, mockReq);
 
-      expect(publishedEvent.correlationId).toBe('test-correlation-id');
-      expect(publishedEvent.timestamp).toBeDefined();
+      expect(publishedEvent).toBeDefined();
+      expect(publishedEvent?.correlationId).toBe('test-correlation-id');
+      expect(publishedEvent?.timestamp).toBeDefined();
+      expect(publishedEvent?.eventId).toBe('123');
+      expect(publishedEvent?.source).toBe('facebook');
+    });
+
+    it('should publish to correct subjects based on source', async () => {
+      const capturedSubjects: string[] = [];
+      (mockJetStreamService.publish as jest.Mock).mockImplementation(
+        (subject: string) => {
+          capturedSubjects.push(subject);
+          return Promise.resolve({ seq: 1, duplicate: false });
+        },
+      );
+
+      const events = [
+        { source: 'facebook' as const },
+        { source: 'tiktok' as const },
+      ];
+
+      const mockReq = { correlationId: 'test-correlation-id' } as Request;
+
+      await appController.handleEvent(events, mockReq);
+
+      expect(capturedSubjects).toEqual(['events.facebook', 'events.tiktok']);
+    });
+
+    it('should handle validation warnings for invalid events', async () => {
+      (mockJetStreamService.publish as jest.Mock).mockResolvedValue({
+        seq: 1,
+        duplicate: false,
+      });
+
+      const events: Array<{ source: string }> = [
+        { source: 'invalid-source' }, // Invalid source
+      ];
+
+      const mockReq = { correlationId: 'test-correlation-id' } as Request;
+
+      await appController.handleEvent(events as any, mockReq);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        'Invalid event batch received',
+        expect.objectContaining({
+          correlationId: 'test-correlation-id',
+          error: expect.any(Object),
+        }),
+      );
     });
   });
 });
